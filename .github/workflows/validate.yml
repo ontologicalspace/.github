@@ -1,0 +1,115 @@
+name: Validate org profile
+
+# This repository declares a "mechanical verification" governance channel
+# (GOVERNANCE.md §3). To keep itself subject to the discipline it announces,
+# this workflow validates the org profile + community health files on every
+# push and pull request.
+#
+# Checks performed:
+#   - YAML syntax of issue forms and workflow config
+#   - required files exist (14 expected files)
+#   - issue forms define name / description / body
+#   - no unresolved placeholders remain (fail-closed)
+#   - Contributor Covenant reporting contact is filled in
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate YAML syntax
+        run: |
+          # YAML files that must parse
+          yaml_files=(
+            ".github/ISSUE_TEMPLATE/config.yml"
+            ".github/ISSUE_TEMPLATE/bug_report.yml"
+            ".github/ISSUE_TEMPLATE/feature_request.yml"
+            ".github/ISSUE_TEMPLATE/paper_evidence.yml"
+            ".github/ISSUE_TEMPLATE/question.yml"
+          )
+          for f in "${yaml_files[@]}"; do
+            python3 -c "import yaml,sys; yaml.safe_load(open('$f'))" \
+              && echo "OK: $f" \
+              || { echo "FAIL: invalid YAML in $f"; exit 1; }
+          done
+
+      - name: Verify required files exist
+        run: |
+          required=(
+            "profile/README.md"
+            "GOVERNANCE.md"
+            "CONTRIBUTING.md"
+            "CODE_OF_CONDUCT.md"
+            "SECURITY.md"
+            "SUPPORT.md"
+            "LICENSE"
+            "PULL_REQUEST_TEMPLATE.md"
+            ".github/ISSUE_TEMPLATE/config.yml"
+            ".github/ISSUE_TEMPLATE/bug_report.yml"
+            ".github/ISSUE_TEMPLATE/feature_request.yml"
+            ".github/ISSUE_TEMPLATE/paper_evidence.yml"
+            ".github/ISSUE_TEMPLATE/question.yml"
+          )
+          missing=0
+          for f in "${required[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "MISSING: $f"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "ERROR: required files missing"
+            exit 1
+          fi
+          echo "All required files present."
+
+      - name: Verify issue forms have name, description, body
+        run: |
+          forms=(
+            ".github/ISSUE_TEMPLATE/bug_report.yml"
+            ".github/ISSUE_TEMPLATE/feature_request.yml"
+            ".github/ISSUE_TEMPLATE/paper_evidence.yml"
+            ".github/ISSUE_TEMPLATE/question.yml"
+          )
+          for f in "${forms[@]}"; do
+            python3 -c "
+            import yaml,sys
+            d=yaml.safe_load(open('$f'))
+            for key in ('name','description','body'):
+                if key not in d:
+                    print('FAIL: $f missing key: '+key); sys.exit(1)
+            " && echo "OK: $f (name/description/body present)"
+          done
+
+      - name: Scan for unresolved placeholders (fail-closed)
+        run: |
+          if grep -rnE '\[INSERT|TODO|example\.com|your-email|YOUR_|CHANGEME|TBD' --include='*.md' --include='*.yml' --include='*.yaml' . \
+            | grep -v '^\./\.github/workflows/validate.yml'; then
+            echo "ERROR: unresolved placeholders found (see lines above)"
+            exit 1
+          fi
+          echo "No unresolved placeholders."
+
+      - name: Verify Contributor Covenant contact is filled
+        run: |
+          # The CoC must contain a real reporting address, not the placeholder.
+          if grep -qE '\[INSERT CONTACT METHOD\]|INSERT CONTACT' CODE_OF_CONDUCT.md; then
+            echo "ERROR: Contributor Covenant reporting contact is still a placeholder"
+            exit 1
+          fi
+          if ! grep -q 'ervolkan@gmail.com' CODE_OF_CONDUCT.md; then
+            echo "ERROR: CODE_OF_CONDUCT.md reporting contact missing"
+            exit 1
+          fi
+          echo "Contributor Covenant contact is filled."
