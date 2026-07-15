@@ -7,7 +7,7 @@ name: Validate org profile
 #
 # Checks performed:
 #   - YAML syntax of issue forms and workflow config
-#   - required files exist (14 expected files)
+#   - required files exist
 #   - issue forms define name / description / body
 #   - no unresolved placeholders remain (fail-closed)
 #   - Contributor Covenant reporting contact is filled in
@@ -30,19 +30,26 @@ jobs:
 
       - name: Validate YAML syntax
         run: |
-          # YAML files that must parse
-          yaml_files=(
-            ".github/ISSUE_TEMPLATE/config.yml"
-            ".github/ISSUE_TEMPLATE/bug_report.yml"
-            ".github/ISSUE_TEMPLATE/feature_request.yml"
-            ".github/ISSUE_TEMPLATE/paper_evidence.yml"
-            ".github/ISSUE_TEMPLATE/question.yml"
-          )
-          for f in "${yaml_files[@]}"; do
-            python3 -c "import yaml,sys; yaml.safe_load(open('$f'))" \
-              && echo "OK: $f" \
-              || { echo "FAIL: invalid YAML in $f"; exit 1; }
-          done
+          python3 << 'EOF'
+          import yaml, sys
+          yaml_files = [
+              ".github/ISSUE_TEMPLATE/config.yml",
+              ".github/ISSUE_TEMPLATE/bug_report.yml",
+              ".github/ISSUE_TEMPLATE/feature_request.yml",
+              ".github/ISSUE_TEMPLATE/paper_evidence.yml",
+              ".github/ISSUE_TEMPLATE/question.yml",
+          ]
+          failed = False
+          for f in yaml_files:
+              try:
+                  yaml.safe_load(open(f))
+                  print(f"OK: {f}")
+              except Exception as e:
+                  print(f"FAIL: invalid YAML in {f}: {e}")
+                  failed = True
+          if failed:
+              sys.exit(1)
+          EOF
 
       - name: Verify required files exist
         run: |
@@ -76,21 +83,26 @@ jobs:
 
       - name: Verify issue forms have name, description, body
         run: |
-          forms=(
-            ".github/ISSUE_TEMPLATE/bug_report.yml"
-            ".github/ISSUE_TEMPLATE/feature_request.yml"
-            ".github/ISSUE_TEMPLATE/paper_evidence.yml"
-            ".github/ISSUE_TEMPLATE/question.yml"
-          )
-          for f in "${forms[@]}"; do
-            python3 -c "
-            import yaml,sys
-            d=yaml.safe_load(open('$f'))
-            for key in ('name','description','body'):
-                if key not in d:
-                    print('FAIL: $f missing key: '+key); sys.exit(1)
-            " && echo "OK: $f (name/description/body present)"
-          done
+          python3 << 'EOF'
+          import yaml, sys
+          forms = [
+              ".github/ISSUE_TEMPLATE/bug_report.yml",
+              ".github/ISSUE_TEMPLATE/feature_request.yml",
+              ".github/ISSUE_TEMPLATE/paper_evidence.yml",
+              ".github/ISSUE_TEMPLATE/question.yml",
+          ]
+          failed = False
+          for f in forms:
+              d = yaml.safe_load(open(f))
+              for key in ("name", "description", "body"):
+                  if key not in d:
+                      print(f"FAIL: {f} missing key: {key}")
+                      failed = True
+              if not failed:
+                  print(f"OK: {f} (name/description/body present)")
+          if failed:
+              sys.exit(1)
+          EOF
 
       - name: Scan for unresolved placeholders (fail-closed)
         run: |
